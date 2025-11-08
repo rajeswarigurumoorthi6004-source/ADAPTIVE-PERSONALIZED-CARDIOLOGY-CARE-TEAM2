@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Adaptive Cardio — White/Blue Enhanced (3D Heart)</title>
+<style>
+:root{
+  --bg:#f5f9ff; --card:#ffffff; --muted:#6b7280; --accent:#3b82f6;
+  --good:#16a34a; --warn:#f59e0b; --danger:#ef4444;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+html,body{height:100%; margin:0; background:var(--bg); color:#111;}
+.app { max-width:1100px; margin:28px auto; padding:22px; display:grid; grid-template-columns: 360px 1fr 320px; gap:18px; }
+.panel { background: var(--card); border-radius:14px; padding:18px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+h2,h3{margin:0 0 8px 0;font-size:18px} p.muted{color:var(--muted);font-size:13px;margin:6px 0 12px 0}
+.patient-select { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
+select,input{background:#f1f5f9; border:1px solid #cbd5e1; color:#111; padding:8px 10px; border-radius:8px; outline:none}
+button.btn { background: var(--accent); border:none; padding:8px 12px; border-radius:10px; color:#fff; font-weight:600; cursor:pointer }
+button.ghost { background:transparent; border:1px solid #cbd5e1; padding:8px 10px; color:var(--muted) }
+.kv { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #e2e8f0; font-size:14px }
+.kv small { color:var(--muted) }
+
+.center-col{ display:flex; flex-direction:column; gap:14px; }
+.gauge-wrap{ display:flex; gap:16px; align-items:center; background:#f8fafc; padding:14px; border-radius:12px }
+.gauge { width:220px; height:110px; border-radius:110px 110px 0 0; position:relative; display:grid; place-items:center; background: #e2e8f0; box-shadow: inset 0 -8px 20px rgba(0,0,0,0.05);}
+.gauge .dial { position:absolute; width:100%; height:200%; border-radius:50%; background: conic-gradient(var(--good) 0deg 140deg, var(--warn) 140deg 220deg, var(--danger) 220deg 360deg); opacity:0.3; filter: blur(6px);}
+.gauge .needle { width:70%; height:70%; border-radius:50%; display:grid; place-items:center; position:absolute; bottom:0; transform-origin: center bottom; transition: transform 0.5s cubic-bezier(.2,.9,.2,1);}
+.gauge .value { font-size:34px; font-weight:700; letter-spacing:0.6px; color:#111 }
+.gauge .label { color:var(--muted); font-size:13px; margin-top:6px }
+
+.metrics { display:flex; flex-direction:column; gap:8px; min-width:160px }
+.metric { background:#f1f5f9; padding:10px; border-radius:10px; border:1px solid #e2e8f0; text-align:center }
+.metric .num { font-weight:700; font-size:20px }
+.metric .txt { font-size:12px; color:var(--muted) }
+
+.chart-card { background:#f8fafc; padding:12px; border-radius:12px; height:250px; display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; }
+#heart3D { width:100%; height:220px; display:block; }
+
+.alerts { display:flex; flex-direction:column; gap:8px; max-height:560px; overflow:auto; padding-top:6px }
+.alert { padding:10px 12px; border-radius:10px; font-weight:700; display:flex; justify-content:space-between; align-items:center; opacity:0; transform: translateY(-10px); transition: opacity 0.5s ease, transform 0.5s ease; background:#e0f2fe; color:#111; border:1px solid #bae6fd; }
+.alert.show { opacity:1; transform: translateY(0); }
+
+.controls { display:flex; gap:8px; margin-top:8px; align-items:center }
+.footer-note{ color:var(--muted); font-size:12px; margin-top:10px }
+.patient-summary { position:absolute; top:0; right:-300px; width:250px; background:#ffffff; border:1px solid #cbd5e1; border-radius:12px; padding:12px; box-shadow:0 4px 20px rgba(0,0,0,0.08); display:none; }
+
+@media (max-width:1000px){ .app { grid-template-columns: 1fr; padding:12px; } .gauge-wrap{ flex-direction:column; align-items:center } .metrics{ flex-direction:row; width:100%; justify-content:space-around } }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- LEFT -->
+  <div class="panel">
+    <h2>Adaptive Cardio </h2>
+    <p class="muted">Simulated wearable + clinical data. Not for clinical use.</p>
+    <div class="patient-select">
+      <label for="patient">Patient</label>
+      <select id="patient"></select>
+      <button id="add-note" class="ghost">Add note</button>
+    </div>
+    <div class="kv"><span><small>Heart Rate (mean)</small></span><span id="hrMean">--</span></div>
+    <div class="kv"><span><small>Arrhythmia events</small></span><span id="arrCount">--</span></div>
+    <div class="kv"><span><small>Avg SpO₂</small></span><span id="spo2Avg">--</span></div>
+    <div class="controls">
+      <button id="startBtn" class="btn">Start</button>
+      <button id="stopBtn" class="ghost">Stop</button>
+      <label style="margin-left:auto">Speed
+        <select id="speed">
+          <option value="1">1x</option>
+          <option value="5">5x</option>
+          <option value="20">20x</option>
+        </select>
+      </label>
+    </div>
+    <div class="footer-note">Open this HTML file in VS Code or any browser. Uses only client-side JS.</div>
+  </div>
+
+  <!-- CENTER -->
+  <div class="center-col panel">
+    <div class="gauge-wrap">
+      <div class="gauge" aria-hidden="true">
+        <div class="dial"></div>
+        <div class="needle" id="needle">
+          <div style="text-align:center">
+            <div class="value" id="hrValue">--</div>
+            <div class="label" id="hrLabel">bpm</div>
+          </div>
+        </div>
+      </div>
+      <div class="metrics">
+        <div class="metric" id="statusMetric"><div class="num" id="statusBadge">Normal</div><div class="txt">Status</div></div>
+        <div class="metric" id="arrMetric"><div class="num" id="arrProb">--%</div><div class="txt">Arrhythmia risk</div></div>
+        <div class="metric" id="spoMetric"><div class="num" id="spo2Val">--%</div><div class="txt">SpO₂</div></div>
+      </div>
+    </div>
+
+    <!-- 3D HEART replaces HR Timeline -->
+    <div class="chart-card">
+      <h3 style="margin:6px 0">Real 3D Heart (Cinematic Pulse)</h3>
+      <div id="heart3D"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="panel">
+    <h3 style="margin-top:0">Event Log</h3>
+    <div class="alerts" id="alerts">
+      <div class="alert show">System started — waiting for patient selection <small></small></div>
+    </div>
+    <button id="clearAlerts" class="ghost">Clear</button>
+  </div>
+</div>
+
+<div class="patient-summary" id="patientSummary"></div>
+
+<audio id="alertSound">
+  <source src="https://www.soundjay.com/button/beep-07.wav" type="audio/wav">
+</audio>
+
+<!-- Three.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+<script>
+/* -------------------------------
+   ORIGINAL SIMULATION CODE (unchanged)
+   ------------------------------- */
+const N_PATIENTS=40; const patients=[];
+for(let i=0;i<N_PATIENTS;i++){
+  const age=randInt(30,80), sex_male=Math.random()>0.45?1:0, weight=+(rand(50,110)).toFixed(1), hypertension=Math.random()<0.25?1:0;
+  const base=75-(age-40)*0.2+(hypertension?5:0)+(sex_male?-1.5:0)+(weight-70)*0.05;
+  patients.push({id:i,age,sex_male,weight,hypertension,base,buffer:[],arr_count:0,hr_history:[]});
+}
+
+const patientSelect=document.getElementById('patient');
+const hrValue=document.getElementById('hrValue');
+const arrProbEl=document.getElementById('arrProb');
+const spo2Val=document.getElementById('spo2Val');
+const statusBadge=document.getElementById('statusBadge');
+const arrCountEl=document.getElementById('arrCount');
+const hrMean=document.getElementById('hrMean');
+const spo2Avg=document.getElementById('spo2Avg');
+const alertsEl=document.getElementById('alerts');
+const needle=document.getElementById('needle');
+const startBtn=document.getElementById('startBtn');
+const stopBtn=document.getElementById('stopBtn');
+const speedSel=document.getElementById('speed');
+const clearAlerts=document.getElementById('clearAlerts');
+const patientSummary=document.getElementById('patientSummary');
+const alertSound=document.getElementById('alertSound');
+
+let running=false,simTimer=null;
+
+patients.forEach(p=>{
+  const opt=document.createElement('option');
+  opt.value=p.id; opt.textContent=`Patient #${p.id} — age ${p.age}`;
+  patientSelect.appendChild(opt);
+});
+patientSelect.value=0;
+
+function resizeCanvas(){ /* placeholder - no hr canvas now */ }
+function drawChartBaseline(){ /* placeholder - no hr canvas now */ }
+
+function simulateSample(p){
+  const t=Date.now(); const circ=3*Math.sin(t/60000+p.id);
+  const activity=(Math.random()<0.02)?(Math.random()*30+10):0;
+  let hr=p.base+circ+activity+randn(0,1.6); let arr=0;
+  if(Math.random()<0.008) arr=1; if(hr<45||hr>120) if(Math.random()<0.06) arr=1;
+  hr=Math.max(20,Math.min(220,hr));
+  const spo2=Math.max(80,Math.min(100,98+randn(0,0.6)));
+  if(arr){ const delta=(Math.random()<0.5)?rand(20,50):-rand(15,30); hr=Math.max(20,Math.min(220,hr+delta+randn(0,4))); }
+  p.buffer.push({hr,spo2,t,arr}); if(p.buffer.length>120) p.buffer.shift();
+  if(arr){p.arr_count+=1;p.hr_history.push(hr);}
+  return {hr,spo2,arr};
+}
+
+function updateGauge(hr){
+  hrValue.textContent=Math.round(hr);
+  const min=20,max=180,pct=(hr-min)/(max-min),deg=Math.max(0,Math.min(1,pct))*180-90;
+  needle.style.transform=`rotate(${deg}deg)`;
+  if(hr<100){statusBadge.textContent='Normal'; statusBadge.parentElement.style.background='#d1fae5'; statusBadge.style.color='#065f46';}
+  else if(hr<130){statusBadge.textContent='Warning'; statusBadge.parentElement.style.background='#fef3c7'; statusBadge.style.color='#b45309';}
+  else{statusBadge.textContent='Critical'; statusBadge.parentElement.style.background='#fee2e2'; statusBadge.style.color='#991b1b';}
+}
+
+function updateSpO2(spo){
+  spo2Val.textContent=spo.toFixed(1)+'%';
+  const spoMetric=document.getElementById('spoMetric');
+  if(spo>=95) spoMetric.style.background='#d1fae5';
+  else if(spo>=90) spoMetric.style.background='#fef3c7';
+  else spoMetric.style.background='#fee2e2';
+}
+
+function pushAlert(message){
+  const a=document.createElement('div'); a.className='alert'; a.innerHTML=`<span>${message}</span><small>${new Date().toLocaleTimeString()}</small>`; alertsEl.prepend(a); setTimeout(()=>a.classList.add('show'),50);
+  if(alertSound) { try{ alertSound.currentTime = 0; alertSound.play(); }catch(e){} }
+  while(alertsEl.children.length>100) alertsEl.removeChild(alertsEl.lastChild);
+}
+
+/* -------------------------------
+   3D HEART - Three.js
+   - lightweight heart-like geometry created by deforming a sphere
+   - pulses and increases emissive intensity based on HR
+   ------------------------------- */
+let scene, camera, renderer, heartMesh, pointLight;
+initHeart3D();
+animateHeart();
+
+function initHeart3D(){
+  const container = document.getElementById('heart3D');
+  scene = new THREE.Scene();
+  // subtle bluish fog to make it cinematic
+  scene.fog = new THREE.FogExp2(0xf5f9ff, 0.02);
+
+  const w = container.clientWidth, h = container.clientHeight;
+  camera = new THREE.PerspectiveCamera(35, w/h, 0.1, 1000);
+  camera.position.set(0,0,6);
+
+  renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  renderer.setSize(w, h);
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  container.appendChild(renderer.domElement);
+
+  // lights
+  pointLight = new THREE.PointLight(0xff7a94, 1.4, 20);
+  pointLight.position.set(3, 4, 5);
+  scene.add(pointLight);
+  const rim = new THREE.PointLight(0x6eaef8, 0.8, 30);
+  rim.position.set(-4, -2, 6);
+  scene.add(rim);
+  scene.add(new THREE.AmbientLight(0x202830, 0.8));
+
+  // create a sphere and deform vertices to look heart-like
+  const geom = new THREE.SphereGeometry(1.2, 64, 64);
+  const pos = geom.attributes.position;
+  // modify vertices: squash top, pull center to form a heart indentation
+  for(let i=0;i<pos.count;i++){
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    // push vertices outward in a heart-ish profile using simple formula
+    const r = Math.sqrt(x*x + y*y + z*z);
+    // emphasize lower hemisphere, pinch top a bit
+    let k = 1;
+    if(y > 0.15) k = 0.9 - 0.35*Math.pow(y,1.5);
+    if(y < -0.2) k = 1 + 0.25*Math.abs(y);
+    // create a subtle indentation in front center (like the atrial groove)
+    const frontBias = 1 + 0.25*Math.exp(-5*(z-0.3)*(z-0.3));
+    pos.setXYZ(i, x * k * frontBias, y * k, z * k * (1 - 0.05*Math.abs(x)));
+  }
+  geom.computeVertexNormals();
+
+  // material with emissive color to simulate neon/pulse glow
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xff102b,
+    emissive: 0xff2b5a,
+    emissiveIntensity: 0.25,
+    roughness: 0.35,
+    metalness: 0.05,
+    side: THREE.DoubleSide
+  });
+
+  heartMesh = new THREE.Mesh(geom, mat);
+  heartMesh.rotation.x = -0.2;
+  heartMesh.rotation.y = 0.6;
+  scene.add(heartMesh);
+
+  window.addEventListener('resize', onWindowResize);
+}
+
+function onWindowResize(){
+  const container = document.getElementById('heart3D');
+  const w = container.clientWidth, h = container.clientHeight;
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w,h);
+}
+
+// heartbeat animation: use HR to modulate speed & depth
+function animateHeart(){
+  requestAnimationFrame(animateHeart);
+  const bpm = Number(hrValue.textContent) || 75;
+  // heartbeat frequency factor (higher bpm -> faster)
+  const freq = bpm/60; // beats per second
+  // time scaled to heartbeat
+  const t = Date.now() / 1000;
+  // pulse as a series of sharper beats (simulate systole/diastole)
+  const beat = Math.abs(Math.sin(t * Math.PI * freq * 2))**3; // creates sharper peak
+  // base scale plus pulse
+  const baseScale = 1;
+  const scale = baseScale + 0.16 * beat;
+  heartMesh.scale.set(scale, scale * 1.05, scale);
+  // gentle rotation for cinematic effect
+  heartMesh.rotation.y += 0.004;
+  heartMesh.rotation.x = -0.15 + 0.02*Math.sin(t*0.5);
+  // emissive intensity brightens on beat
+  heartMesh.material.emissiveIntensity = 0.18 + 0.55 * beat;
+  // make point light follow the beat for extra pop
+  pointLight.intensity = 0.9 + 1.6 * beat;
+  renderer.render(scene, camera);
+}
+
+/* -------------------------------
+   integrate 3D heart with simulation tick
+   tick() uses simulateSample and updates HR (hrValue text) - heart animation reads hrValue directly
+   ------------------------------- */
+
+function tick(){
+  const speed=Number(speedSel.value);
+  for(let s=0;s<speed;s++){patients.forEach(p=>{
+    const sample=simulateSample(p);
+    if(p.id==Number(patientSelect.value)){
+      if(sample.arr===1) pushAlert(`Arrhythmia detected! HR ${Math.round(sample.hr)}`);
+      else if(sample.hr>120) pushAlert(`High HR: ${Math.round(sample.hr)} bpm`);
+      else if(sample.hr<50) pushAlert(`Low HR: ${Math.round(sample.hr)} bpm`);
+    }
+  });}
+  const p=patients.find(x=>x.id==Number(patientSelect.value));
+  const last=p.buffer[p.buffer.length-1];
+  updateGauge(last.hr); updateSpO2(last.spo2);
+  arrProbEl.textContent=`${Math.min(99,Math.round((p.arr_count/Math.max(1,p.buffer.length))*100))}%`;
+  arrCountEl.textContent=`${p.arr_count}`;
+  hrMean.textContent=`${(p.buffer.reduce((a,b)=>a+b.hr,0)/p.buffer.length).toFixed(1)} bpm`;
+  spo2Avg.textContent=`${(p.buffer.reduce((a,b)=>a+b.spo2,0)/p.buffer.length).toFixed(1)}%`;
+}
+
+/* controls */
+startBtn.addEventListener('click',()=>{if(running)return; running=true; startBtn.disabled=true; stopBtn.disabled=false; simTimer=setInterval(tick,1000);});
+stopBtn.addEventListener('click',()=>{running=false; startBtn.disabled=false; stopBtn.disabled=true; clearInterval(simTimer);});
+patientSelect.addEventListener('change',()=>{
+  tick();
+  const p=patients.find(x=>x.id==Number(patientSelect.value));
+  showPatientSummary(p);
+});
+clearAlerts.addEventListener('click',()=>alertsEl.innerHTML='');
+
+function showPatientSummary(p){
+  patientSummary.style.display='block';
+  patientSummary.style.right='-300px';
+  patientSummary.innerHTML=`<b>Patient #${p.id}</b><br>Age: ${p.age}<br>Weight: ${p.weight}kg<br>Hypertension: ${p.hypertension?'Yes':'No'}`;
+}
+
+function rand(a,b){return Math.random()*(b-a)+a;}
+function randInt(a,b){return Math.floor(rand(a,b+1));}
+function randn(mean=0,sd=1){let u=0,v=0; while(u===0)u=Math.random(); while(v===0)v=Math.random(); const z=Math.sqrt(-2.0*Math.log(u))*Math.cos(2*Math.PI*v); return z*sd+mean;}
+
+/* bootstrap */
+(function init(){patients.forEach(p=>{for(let i=0;i<120;i++){simulateSample(p);}}); tick();})();
+</script>
+</body>
+</html>
